@@ -4,8 +4,9 @@
 // live in their own file (data/sessions/<slug>/autonotes.md) — never
 // inside the user's notes document. The UI renders the two side by side, but
 // they cannot contaminate each other, so the accumulated bullets can never
-// pick up client-generated headings or manual edits. The section is
-// append-only: it grows as the session progresses and is never rewritten.
+// pick up client-generated headings or manual edits. The section grows as
+// the session progresses; the only rewrite is an explicit "Rebuild all",
+// which runs underneath the live tick instead of pausing it (see doRebuild).
 // All Ollama work is funneled through `enqueue` so on-demand commands and
 // this job never run concurrently (the local model is single-tenant anyway).
 import {
@@ -74,7 +75,8 @@ export function createAutoNotes({
   saveAutoNotes,
 }) {
   let timer = null;
-  let running = false;
+  let ticking = false; // an incremental tick's Ollama call is in flight
+  let rebuilding = false; // a rebuild is in progress — ticks keep running under it
   let tickQueued = false; // a scheduled tick is already waiting in the chain
   let rebuildQueued = false; // a rebuild request is already queued or running
   const boot = loadAutoNotes();
@@ -86,9 +88,34 @@ export function createAutoNotes({
   // generates new bullets.
   let lastDigestLen = getTranscriptText().length; // transcript chars already incorporated
 
+  // Rebuild bookkeeping, meaningful only while `rebuilding`. The panel shows
+  // the rebuild's output streaming in as its top part, with the live tail —
+  // the bullets ticks appended since the snapshot — growing below it. That
+  // composite is exactly what the finished rebuild will leave behind, and
+  // every broadcast goes through viewNow(), so the tick and the rebuild
+  // never fight over the panel.
+  let rebuildBase = 0; // content.length when the rebuild snapshotted; tail = content after it
+  let rebuildStream = ''; // rebuild output so far, including the in-flight stage
+  let rebuildAbort = false; // set by reset() — the transcript is gone, commit nothing
+
+  let busyCount = 0; // tick + rebuild can overlap, so the busy flag counts owners
+  const setBusy = (delta) => {
+    busyCount = Math.max(0, busyCount + delta);
+    broadcast({ t: 'autonotes-busy', busy: busyCount > 0 });
+  };
+
+  /** The panel view: while rebuilding, rebuilt-so-far above the live tail. */
+  const viewNow = () => {
+    if (!rebuilding || rebuildAbort) return content; // aborted output is void
+    const top = rebuildStream.trim();
+    if (!top) return content; // before the first token, keep showing the current view
+    const tail = content.slice(rebuildBase).trim();
+    return tail ? `${top}\n${tail}` : top;
+  };
+
   async function tick({ force = false } = {}) {
     const cfg = getConfig();
-    if (running || !cfg.autoNotes || !cfg.ollamaModel) return;
+    if (ticking || !cfg.autoNotes || !cfg.ollamaModel) return;
     // Scheduled runs get out of the way while toolbar commands (summarize,
     // polish, re-read, …) are waiting in the chain — a background refresh
     // must never starve what the user explicitly asked for. Explicit
@@ -100,13 +127,16 @@ export function createAutoNotes({
     if (!newMaterial) return;
     if (!force && newMaterial.length < MIN_NEW_CHARS) return;
 
-    running = true;
+    ticking = true;
     console.log(`[autonotes] job started (${newMaterial.length} new transcript chars)`);
-    broadcast({ t: 'autonotes-busy', busy: true });
+    setBusy(1);
     try {
       let acc = '';
       let lastSent = 0;
-      const soFar = () => (content ? content + '\n' : '') + acc;
+      // While a rebuild is running the rebuild owns the panel (its stream
+      // composes with the live tail), so this tick stays quiet until its
+      // delta is committed — the composite view picks it up from there.
+      const streaming = !rebuilding;
       await chatStream({
         model: cfg.ollamaModel,
         numCtx: NUM_CTX,
@@ -122,9 +152,9 @@ export function createAutoNotes({
           acc += tok;
           updatedAt = new Date().toTimeString().slice(0, 5);
           const now = Date.now();
-          if (now - lastSent > 300) {
+          if (streaming && now - lastSent > 300) {
             lastSent = now;
-            broadcast({ t: 'autonotes', content: soFar(), updated: updatedAt });
+            broadcast({ t: 'autonotes', content: (content ? content + '\n' : '') + acc, updated: updatedAt });
           }
         },
       });
@@ -137,96 +167,123 @@ export function createAutoNotes({
         console.log(`[autonotes] +${delta.length} chars -> ${content.length} total`);
       }
       lastDigestLen = transcript.length; // material consumed either way
-      broadcast({ t: 'autonotes', content, updated: updatedAt });
+      broadcast({ t: 'autonotes', content: viewNow(), updated: updatedAt });
     } catch (e) {
       broadcast({ t: 'error', scope: 'autonotes', message: String(e.message || e) });
     } finally {
-      running = false;
-      broadcast({ t: 'autonotes-busy', busy: false });
+      ticking = false;
+      setBusy(-1);
     }
   }
 
   /**
-   * Full rebuild: the ENTIRE transcript is re-summarized from scratch and the
-   * accumulated bullets are replaced. A transcript longer than one map chunk
-   * goes through map-reduce: each chunk is distilled to bullets ("map"), then
-   * the per-part lists are merged in rounds until one set remains ("reduce").
-   * The old content stays until the new set is ready — a failed rebuild never
+   * Full rebuild: the transcript as of right now is re-summarized from
+   * scratch and the accumulated bullets are replaced. A transcript longer
+   * than one map chunk goes through map-reduce: each chunk is distilled to
+   * bullets ("map"), then the per-part lists are merged in rounds until one
+   * set remains ("reduce").
+   *
+   * The rebuild does not pause the live tick. Each map/merge stage is its
+   * own unit in the Ollama chain, so ticks keep turning incoming speech into
+   * bullets in the gaps between stages. Those bullets pile up below the
+   * rebuild's output and are re-attached when it commits, so speech that
+   * arrives during a long rebuild is neither dropped nor overwritten. The
+   * old content stays until the new set is ready — a failed rebuild never
    * blanks the panel.
    */
   async function doRebuild() {
+    // Let everything already waiting in the chain finish first (an in-flight
+    // tick, a queued command) before snapshotting: otherwise the snapshot
+    // boundary could straddle material a just-finished tick is turning into
+    // bullets, and that range would end up both in the rebuilt set and in
+    // the tick's appended tail.
+    await enqueue(() => {});
     const cfg = getConfig();
-    if (running || !cfg.autoNotes || !cfg.ollamaModel) return;
-    const transcript = getTranscriptText();
-    if (!transcript.trim()) return;
-    running = true;
-    const chunks = chunkTranscript(transcript);
+    if (rebuilding || !cfg.autoNotes || !cfg.ollamaModel) return;
+    const snapshot = getTranscriptText();
+    if (!snapshot.trim()) return;
+    const digestAtStart = lastDigestLen; // restore point if the rebuild fails
+    rebuilding = true;
+    rebuildAbort = false;
+    rebuildBase = content.length;
+    rebuildStream = '';
+    // The snapshot is now the rebuild's to cover — ticks own only the speech
+    // that arrives after it, so advance past it (otherwise the seam range
+    // would end up summarized both in the rebuilt set and in the tail).
+    lastDigestLen = snapshot.length;
+    const prevLen = content.length;
+    const chunks = chunkTranscript(snapshot);
     console.log(
-      `[autonotes] rebuild started (${transcript.length} transcript chars, ${chunks.length} part${chunks.length === 1 ? '' : 's'})`
+      `[autonotes] rebuild started (${snapshot.length} transcript chars, ${chunks.length} part${chunks.length === 1 ? '' : 's'})`
     );
-    broadcast({ t: 'autonotes-busy', busy: true });
+    setBusy(1);
+    let failed = null;
     try {
-      const prev = content;
       let lastSent = 0;
-      // Streams the candidate replacement into the panel as it builds. The
-      // prefix carries what earlier stages already produced, so a long
-      // map-reduce rebuild shows accumulated progress instead of every stage
-      // starting from a blank panel.
-      const onToken = (prefix) => {
-        let local = prefix;
-        let last = 0;
-        return (tok) => {
-          local += tok;
-          updatedAt = new Date().toTimeString().slice(0, 5);
-          const now = Date.now();
-          if (now - lastSent > 300) {
-            lastSent = now;
-            last = now;
-            broadcast({ t: 'autonotes', content: local, updated: updatedAt });
-          }
-        };
+      const streamView = () => {
+        if (rebuildAbort) return; // cleared mid-rebuild — don't paint stale output
+        updatedAt = new Date().toTimeString().slice(0, 5);
+        broadcast({ t: 'autonotes', content: viewNow(), updated: updatedAt });
       };
+      const onToken = (prefix) => (tok) => {
+        rebuildStream = prefix + tok;
+        updatedAt = new Date().toTimeString().slice(0, 5);
+        const now = Date.now();
+        if (now - lastSent > 300) {
+          lastSent = now;
+          streamView();
+        }
+      };
+      // Each stage is enqueued as its own chain unit rather than holding the
+      // chain for the whole rebuild — that is what lets the tick (and user
+      // commands) interleave between stages.
+      const call = (messages, prefix) =>
+        enqueue(() =>
+          chatStream({
+            model: cfg.ollamaModel,
+            numCtx: NUM_CTX,
+            messages,
+            onToken: onToken(prefix),
+          })
+        );
+
       let parts = [];
       if (chunks.length === 1) {
         // Short session: one prompt, as before — the single-shot prompt
         // produces a better-shaped set than extract-then-merge.
-        parts = [
-          await chatStream({
-            model: cfg.ollamaModel,
-            numCtx: NUM_CTX,
-            messages: rebuildAutoNotesMessages({
+        parts.push(
+          await call(
+            rebuildAutoNotesMessages({
               transcript: chunks[0],
               manualNotes: getNotesDoc(),
               profileCtx: getProfileContext(),
             }),
-            onToken: onToken(''),
-          }),
-        ];
+            ''
+          )
+        );
       } else {
         // Map: distill each chunk to bullets. Chunk-scoped prompts keep the
         // model's effective context small regardless of session length.
-        for (let i = 0; i < chunks.length; i++) {
+        for (let i = 0; i < chunks.length && !rebuildAbort; i++) {
           const part = (
-            await chatStream({
-              model: cfg.ollamaModel,
-              numCtx: NUM_CTX,
-              messages: mapAutoNotesMessages({
+            await call(
+              mapAutoNotesMessages({
                 chunk: chunks[i],
                 index: i + 1,
                 total: chunks.length,
                 profileCtx: getProfileContext(),
               }),
-              onToken: onToken(parts.join('\n')),
-            })
+              parts.join('\n')
+            )
           ).trim();
           if (part) parts.push(part);
           console.log(`[autonotes] rebuild: part ${i + 1}/${chunks.length} -> ${part.length} chars of bullets`);
-          broadcast({ t: 'autonotes', content: parts.join('\n'), updated: updatedAt });
+          streamView();
         }
         // Reduce: merge rounds over batches, each batch bounded by chars so
-        // the merge prompt itself can never overflow. A merge that comes back
-        // empty keeps its inputs rather than losing them.
-        while (parts.length > 1) {
+        // the merge prompt itself can never overflow. A merge that comes
+        // back empty keeps its inputs rather than losing them.
+        while (parts.length > 1 && !rebuildAbort) {
           const before = parts.length;
           const next = [];
           for (const batch of batchByChars(parts, MERGE_INPUT_CHARS)) {
@@ -235,16 +292,14 @@ export function createAutoNotes({
               continue;
             }
             const merged = (
-              await chatStream({
-                model: cfg.ollamaModel,
-                numCtx: NUM_CTX,
-                messages: mergeAutoNotesMessages({
+              await call(
+                mergeAutoNotesMessages({
                   partials: batch,
                   manualNotes: getNotesDoc(),
                   profileCtx: getProfileContext(),
                 }),
-                onToken: onToken(next.join('\n')),
-              })
+                next.join('\n')
+              )
             ).trim();
             next.push(merged || batch.join('\n'));
           }
@@ -252,26 +307,40 @@ export function createAutoNotes({
           // nothing more to merge, so don't spin forever
           if (next.length === before) break;
           parts = next;
-          broadcast({ t: 'autonotes', content: parts.join('\n'), updated: updatedAt });
+          streamView();
           console.log(`[autonotes] rebuild: merged down to ${parts.length} set(s)`);
         }
       }
       const fresh = parts.join('\n').trim();
-      // only replace on success — an empty reply keeps the previous bullets
-      if (fresh) {
-        content = fresh;
+      if (rebuildAbort) {
+        console.log('[autonotes] rebuild discarded — the transcript was cleared mid-rebuild');
+      } else if (fresh) {
+        // Re-attach the bullets ticks appended while the rebuild ran: the
+        // rebuilt set covers the snapshot, the tail covers everything after.
+        const tail = content.slice(rebuildBase).trim();
+        content = tail ? `${fresh}\n${tail}` : fresh;
         updatedAt = new Date().toTimeString().slice(0, 5);
         saveAutoNotes(content);
-        console.log(`[autonotes] rebuilt: ${content.length} chars (was ${prev.length})`);
+        console.log(`[autonotes] rebuilt: ${content.length} chars (was ${prevLen})`);
+      } else {
+        console.log('[autonotes] rebuild produced nothing — keeping the previous bullets');
       }
-      lastDigestLen = transcript.length; // the whole transcript is now incorporated
-      broadcast({ t: 'autonotes', content, updated: updatedAt });
     } catch (e) {
-      broadcast({ t: 'autonotes', content, updated: updatedAt }); // restore the old view
-      broadcast({ t: 'error', scope: 'autonotes', message: `Rebuild failed: ${e.message || e}` });
+      failed = e;
     } finally {
-      running = false;
-      broadcast({ t: 'autonotes-busy', busy: false });
+      const err = failed;
+      if (err) {
+        // A failed rebuild incorporated nothing, so give the seam range back
+        // to the tick — it re-summarizes from the old marker (deduping
+        // against the tail bullets through the prompt's existing context).
+        lastDigestLen = Math.min(lastDigestLen, digestAtStart);
+      }
+      rebuilding = false;
+      rebuildStream = '';
+      rebuildAbort = false;
+      setBusy(-1);
+      broadcast({ t: 'autonotes', content, updated: updatedAt });
+      if (err) broadcast({ t: 'error', scope: 'autonotes', message: `Rebuild failed: ${err.message || err}` });
     }
   }
 
@@ -306,16 +375,24 @@ export function createAutoNotes({
     },
     rebuild() {
       // Collapse duplicates: while a rebuild is queued or running, further
-      // clicks are no-ops — the in-flight one already covers the latest
-      // transcript. The button therefore never needs to disable itself on
-      // job activity; it only grays out when there is nothing to rebuild.
+      // clicks are no-ops — the in-flight one already covers the snapshot and
+      // the live tick keeps it current underneath. The button therefore never
+      // needs to disable itself on job activity; it only grays out when there
+      // is nothing to rebuild.
       if (rebuildQueued) return;
       rebuildQueued = true;
-      enqueue(() => doRebuild()).finally(() => {
-        rebuildQueued = false;
-      });
+      Promise.resolve()
+        .then(() => doRebuild())
+        .catch((e) => console.error('[autonotes] rebuild crashed:', e))
+        .finally(() => {
+          rebuildQueued = false;
+        });
     },
     reset() {
+      // If a rebuild is running, stop it from committing — its snapshot is
+      // the transcript that was just cleared, and resurrecting bullets for
+      // cleared speech is the one outcome we must never allow.
+      rebuildAbort = rebuilding;
       lastDigestLen = 0;
       content = '';
       updatedAt = null;
@@ -323,7 +400,7 @@ export function createAutoNotes({
     },
     /** Current state, sent to new clients in their init message. */
     snapshot() {
-      return { content, updated: updatedAt, busy: running };
+      return { content: viewNow(), updated: updatedAt, busy: busyCount > 0 };
     },
   };
 }
