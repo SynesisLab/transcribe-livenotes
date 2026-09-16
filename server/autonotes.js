@@ -225,14 +225,20 @@ export function createAutoNotes({
         updatedAt = new Date().toTimeString().slice(0, 5);
         broadcast({ t: 'autonotes', content: viewNow(), updated: updatedAt });
       };
-      const onToken = (prefix) => (tok) => {
-        rebuildStream = prefix + tok;
-        updatedAt = new Date().toTimeString().slice(0, 5);
-        const now = Date.now();
-        if (now - lastSent > 300) {
-          lastSent = now;
-          streamView();
-        }
+      const onToken = (prefix) => {
+        let acc = ''; // the in-flight stage's text so far; `prefix` is the stages before it
+        return (tok) => {
+          acc += tok;
+          // join with a newline: the acc grows into the next part, which the
+          // later parts.join('\n') separators match
+          rebuildStream = prefix ? `${prefix}\n${acc}` : acc;
+          updatedAt = new Date().toTimeString().slice(0, 5);
+          const now = Date.now();
+          if (now - lastSent > 300) {
+            lastSent = now;
+            streamView();
+          }
+        };
       };
       // Each stage is enqueued as its own chain unit rather than holding the
       // chain for the whole rebuild — that is what lets the tick (and user
