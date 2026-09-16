@@ -14,6 +14,23 @@ export async function listModels() {
   return (json.models || []).map((m) => m.name);
 }
 
+// Sampling / runtime parameters a user can override for every AI call, from
+// the settings menu. Sparse: a key left out falls back to the model's own
+// Modelfile / Ollama defaults. num_ctx also bounds the auto-notes prompts
+// (see autonotes.js) — an explicit setting wins over that job's fallback.
+const OPTION_KEYS = ['temperature', 'top_p', 'top_k', 'repeat_penalty', 'num_predict', 'num_ctx', 'seed'];
+
+/** Keep only whitelisted finite-number keys — the wire/persistence format of config.ollamaOptions. */
+export function sanitizeOllamaOptions(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const key of OPTION_KEYS) {
+    const v = raw[key];
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = v;
+  }
+  return out;
+}
+
 /**
  * Streams a chat completion. Calls onToken(chunk) for each piece of the
  * assistant message, resolves with the full text.
@@ -24,10 +41,14 @@ export async function listModels() {
  * propagates to the caller, and the feature's busy state clears so the next
  * attempt can run.
  */
-export async function chatStream({ model, messages, onToken, signal, timeoutMs = 300_000, numCtx }) {
+export async function chatStream({ model, messages, onToken, signal, timeoutMs = 300_000, numCtx, options }) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(new Error(`Ollama did not answer within ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
   if (signal) signal.addEventListener('abort', () => ctrl.abort(signal.reason), { once: true });
+  // User-set parameters (config.ollamaOptions) go last, so they win — an
+  // explicit num_ctx here overrides a caller's fallback like auto-notes' 8192.
+  const userOptions = {};
+  if (options) for (const [k, v] of Object.entries(options)) if (v !== null && v !== undefined) userOptions[k] = v;
   try {
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
@@ -42,6 +63,7 @@ export async function chatStream({ model, messages, onToken, signal, timeoutMs =
           // head — no error ever reaches us. Callers that pack large prompts
           // must raise num_ctx above the ~4096-token default themselves.
           ...(numCtx ? { num_ctx: numCtx } : {}),
+          ...userOptions,
         },
       }),
       signal: ctrl.signal,

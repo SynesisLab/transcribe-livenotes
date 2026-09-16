@@ -8,7 +8,7 @@
 //     autonotes.md         the server-owned AI bullets
 //     transcript.md        history, one "- [HH:MM] text" line per utterance
 //     latest.txt           plain-text transcript mirror for other tools
-//   data/config.json       global config — just the Ollama model choice
+//   data/config.json       global config — Ollama model choice + options
 //   data/profiles.json     profiles (global, shared across notes)
 //
 // The auto-notes toggle and the active profile are PER NOTE (each note is a
@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sanitizeOllamaOptions } from './ollama.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = path.join(ROOT, 'data');
@@ -210,12 +211,15 @@ export function sessionTranscriptLines(slug) {
 
 // ------------------------------------------------------------ global config
 
-let globalConfig = { ollamaModel: null };
+let globalConfig = { ollamaModel: null, ollamaOptions: null };
 
 export const getGlobalConfig = () => globalConfig;
 
 export function saveGlobalConfig() {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify({ ollamaModel: globalConfig.ollamaModel ?? null }, null, 2));
+  fs.writeFileSync(
+    CONFIG_FILE,
+    JSON.stringify({ ollamaModel: globalConfig.ollamaModel ?? null, ollamaOptions: globalConfig.ollamaOptions ?? null }, null, 2)
+  );
 }
 
 // --------------------------------------------------------------- migration
@@ -292,10 +296,11 @@ export function initStore() {
     saveIndex();
     console.log('[store] created index entry for migrated note "default"');
   }
-  // 3. global config — model choice only; the toggle/profile moved onto notes
+  // 3. global config — model choice + optional generation-parameter overrides
   try {
     const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     if (typeof parsed.ollamaModel === 'string') globalConfig.ollamaModel = parsed.ollamaModel;
+    if (parsed.ollamaOptions) globalConfig.ollamaOptions = sanitizeOllamaOptions(parsed.ollamaOptions);
   } catch {
     /* defaults */
   }

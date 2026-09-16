@@ -749,6 +749,94 @@ body.split-dragging {
   border-color: var(--accent-press);
 }
 
+/* ------------------------------------------------------------- ai settings */
+.btn.gear {
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 8px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-form > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.settings-model {
+  font-size: 13px;
+  padding: 7px 10px;
+  max-width: none;
+  background: var(--surface-2);
+}
+
+.adv-params {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+}
+
+.adv-params summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 12px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setting-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.setting-cell input {
+  font: inherit;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.setting-cell input:focus {
+  outline: 2px solid #ecd5ca;
+  border-color: var(--accent);
+}
+
+.settings-note {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 10px 0 0;
+}
+
 /* ------------------------------------------------------------- dashboard */
 .dashboard {
   flex: 1;

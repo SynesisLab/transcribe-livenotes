@@ -140,6 +140,7 @@ export function createAutoNotes({
       await chatStream({
         model: cfg.ollamaModel,
         numCtx: NUM_CTX,
+        options: cfg.ollamaOptions,
         messages: autoNotesMessages({
           existing: content,
           // the user's manual notes as context — new bullets must not
@@ -248,6 +249,7 @@ export function createAutoNotes({
           chatStream({
             model: cfg.ollamaModel,
             numCtx: NUM_CTX,
+            options: cfg.ollamaOptions,
             messages,
             onToken: onToken(prefix),
           })

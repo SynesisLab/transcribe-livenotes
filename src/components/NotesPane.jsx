@@ -24,6 +24,7 @@ export default function NotesPane({
   models,
   ollamaModel,
   onModelChange,
+  onOpenSettings,
 }) {
   const [preview, setPreview] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
@@ -196,6 +197,13 @@ export default function NotesPane({
             </option>
           ))}
         </select>
+        <button
+          className="btn gear"
+          onClick={onOpenSettings}
+          title="AI settings — model & generation parameters (temperature, top P, …)"
+        >
+          ⚙
+        </button>
       </footer>
     </section>
   );

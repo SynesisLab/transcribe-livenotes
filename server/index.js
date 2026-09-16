@@ -23,7 +23,7 @@ import {
   encodeWav,
   transcribeWav,
 } from './whisper.js';
-import { listModels, chatStream, COMMANDS } from './ollama.js';
+import { listModels, chatStream, COMMANDS, sanitizeOllamaOptions } from './ollama.js';
 import {
   initStore,
   listSessions,
@@ -51,7 +51,7 @@ const APP_PORT = Number(process.env.PORT || 3001);
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
 initStore(); // idempotent v1.0.0 migration + note index + global config
-const globalConfig = getGlobalConfig(); // { ollamaModel } — model choice is app-wide
+const globalConfig = getGlobalConfig(); // { ollamaModel, ollamaOptions } — app-wide model + parameters
 
 // ---------------------------------------------------------------------------
 // Shared state + broadcast
@@ -70,9 +70,10 @@ function broadcastAll(obj) {
   for (const rt of runtimes.values()) broadcastTo(rt, obj);
 }
 
-/** The config view one note's client sees: global model + note-scoped bits. */
+/** The config view one note's client sees: global model + parameters, note-scoped bits. */
 const cfgView = (rt) => ({
   ollamaModel: globalConfig.ollamaModel,
+  ollamaOptions: globalConfig.ollamaOptions || {},
   autoNotes: rt.meta.autoNotes,
   activeProfileId: rt.meta.activeProfileId,
 });
@@ -268,6 +269,7 @@ async function runAiCommand({ id, cmd, selection }, ws, rt) {
     await chatStream({
       model: globalConfig.ollamaModel,
       messages,
+      options: globalConfig.ollamaOptions,
       onToken: (token) => send({ t: 'ai-token', id, token }),
     });
     send({ t: 'ai-done', id });
@@ -343,11 +345,17 @@ app.get('/api/config', (_req, res) => {
 });
 
 app.post('/api/config', (req, res) => {
-  const { ollamaModel, autoNotes: enabled, activeProfileId } = req.body || {};
+  const { ollamaModel, ollamaOptions, autoNotes: enabled, activeProfileId } = req.body || {};
   // the model is app-wide; the toggle + active profile belong to one note,
   // selected with ?session=<slug> from that note's page
   if (typeof ollamaModel === 'string') {
     globalConfig.ollamaModel = ollamaModel;
+    saveGlobalConfig();
+    for (const rt of runtimes.values()) broadcastTo(rt, { t: 'config', config: cfgView(rt) });
+  }
+  // generation-parameter overrides replace the whole set ({} or null clears)
+  if (ollamaOptions === null || typeof ollamaOptions === 'object') {
+    globalConfig.ollamaOptions = sanitizeOllamaOptions(ollamaOptions);
     saveGlobalConfig();
     for (const rt of runtimes.values()) broadcastTo(rt, { t: 'config', config: cfgView(rt) });
   }
@@ -464,6 +472,12 @@ wss.on('connection', (ws, _req, rt) => {
       case 'config': {
         if (typeof msg.ollamaModel === 'string') {
           globalConfig.ollamaModel = msg.ollamaModel;
+          saveGlobalConfig();
+          for (const r of runtimes.values()) broadcastTo(r, { t: 'config', config: cfgView(r) });
+        }
+        // generation-parameter overrides replace the whole set ({} clears)
+        if (typeof msg.ollamaOptions === 'object') {
+          globalConfig.ollamaOptions = sanitizeOllamaOptions(msg.ollamaOptions);
           saveGlobalConfig();
           for (const r of runtimes.values()) broadcastTo(r, { t: 'config', config: cfgView(r) });
         }

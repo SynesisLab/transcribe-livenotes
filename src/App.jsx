@@ -4,6 +4,7 @@ import { useRecorder } from './hooks/useRecorder.js';
 import TranscriptPane from './components/TranscriptPane.jsx';
 import NotesPane from './components/NotesPane.jsx';
 import ProfileManager from './components/ProfileManager.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
 
 // Routing is done by full page loads — no client router. "/" is the dashboard
@@ -124,6 +125,7 @@ function SessionApp({ slug, initialTitle }) {
   const [models, setModels] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [config, setConfig] = useState({ ollamaModel: null, autoNotes: true, activeProfileId: null });
   const [whisper, setWhisper] = useState({ state: 'connecting', message: null });
   const [whisperBusy, setWhisperBusy] = useState(false);
@@ -544,10 +546,20 @@ function SessionApp({ slug, initialTitle }) {
           models={models}
           ollamaModel={config.ollamaModel}
           onModelChange={(m) => updateConfig({ ollamaModel: m })}
+          onOpenSettings={() => setSettingsOpen(true)}
           onHide={hideNotes}
           onShow={showNotes}
         />
       </main>
+
+      {settingsOpen && (
+        <SettingsModal
+          config={config}
+          models={models}
+          onClose={() => setSettingsOpen(false)}
+          onSave={(patch) => updateConfig(patch)}
+        />
+      )}
 
       {profileManagerOpen && (
         <ProfileManager
