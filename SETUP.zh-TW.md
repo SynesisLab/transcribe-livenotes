@@ -6,11 +6,69 @@
 每則筆記在 `/<name>` 都有專屬頁面 — 位於 `/` 的總覽面板管理所有筆記。
 轉錄透過 **whisper.cpp** 執行，文字處理透過 **Ollama**。任何資料都不會離開你的電腦。
 
-全新安裝大約需要 **10 分鐘** 加上下載時間。請依序操作 — 每個步驟結尾都有可驗證該步驟是否成功的指令。
+有兩種安裝方式：
+
+- **[選項 A — 封裝版 exe](#選項-a--封裝版-livenotesexe)**（Windows，不需要 Node）：下載一個檔案，雙擊執行。
+- **[選項 B — 從原始碼執行](#選項-b--從原始碼執行)**：Node.js 開發環境的完整安裝流程。
+
+兩者使用相同的引擎，安裝完成後都完全離線。
 
 ---
 
-## 事前需求
+## 選項 A — 封裝版 LiveNotes.exe
+
+整個應用封裝成一個雙擊即可執行的檔案 — 伺服器、UI、whisper.cpp 執行檔與 Whisper 模型全部內嵌。
+
+### 需要什麼
+
+| 需求 | 說明 | 驗證 |
+|---|---|---|
+| **Windows 10/11 x64** | exe 僅支援 Windows。 | — |
+| **Ollama**（AI 功能用） | 從 **[ollama.com/download](https://ollama.com/download)** 安裝 — 安裝程式也會一併啟動背景服務。沒有它，轉錄與手動筆記照常運作；摘要、行動項目、潤飾與即時筆記需要它。 | `ollama --version` |
+| **一個 Ollama 模型** | `ollama pull qwen2.5:3b` — 或見[該用哪個 Ollama 模型？](#該用哪個-ollama-模型) | `ollama list` |
+| **麥克風** | 第一次錄音時瀏覽器會詢問權限。 | — |
+
+Node、npm、Python 都**不需要**。
+
+### 執行它
+
+1. 從最新的 [release](https://github.com/SynesisLab/transcribe-livenotes/releases) 下載 **`LiveNotes.exe`**，放進它自己的資料夾（例如 `Documents\LiveNotes\`）。
+2. 雙擊執行。首次啟動會把內嵌的 whisper 執行檔、模型與 UI（約 75 MB）解壓到 exe 旁邊 — 需要幾秒鐘，之後的啟動會跳過。接著：
+   - 伺服器在 `127.0.0.1:3001` 隱藏執行（沒有主控台視窗），
+   - 預設瀏覽器自動開啟應用，
+   - **系統匣**出現一個圖示 — Windows 預設把它收在時鐘旁的隱藏圖示區（`^`；可以拖到可見區域）。左鍵點擊或選單的 **Open Live Notes** 重新開啟應用；右鍵 → **Quit** 可乾淨地結束，whisper 子程序會一併收掉。
+3. 輸入筆記名稱，點 **+ Create note**，按 **● Record** — 接著看下方的**[初次使用](#初次使用)**導覽。
+
+值得知道的事：
+
+- **你的筆記存放在 exe 旁的 `data/`**（`data/sessions/<name>/…` — 見[檔案位置](#檔案位置)）。把 `LiveNotes.exe` + `data/` 一起複製即可搬移或備份。
+- **結束應用**用系統匣圖示（右鍵 → **Quit**）。關閉瀏覽器不會結束它。`taskkill /IM LiveNotes.exe /F` 也仍然有效；exe 結束時 `whisper-server.exe` 子程序會自行退出，啟動時也有清掃機制會處理殘留的程序。如果系統匣圖示遲遲沒出現，它的輔助程式是 exe 旁的 `server/tray.ps1` — 手動執行它就能看到錯誤訊息。
+- **應用已在執行時再次雙擊**只會重新開啟瀏覽器（單一實例）。
+- **日誌**（exe 沒有主控台）寫在 exe 旁的 `data/log.txt`。
+- **SmartScreen** 可能在首次執行時對未簽署的 exe 提出警告 — 點 *更多資訊 → 仍要執行*。
+- 從指令碼啟動時，可以設定 `LIVELN_NO_BROWSER=1`（不自動開瀏覽器）、`LIVELN_NO_TRAY=1`（不顯示系統匣圖示）或 `PORT=4000`（改用其他連接埠）。
+- exe 內嵌的是 `base.en` Whisper 模型；想用更好的模型，先在原始碼 checkout 執行 `npm run setup -- ggml-large-v3-turbo-q5_0.bin`（見[提升轉錄品質](#提升轉錄品質)），再把該模型檔複製到 exe 資料夾的 `models/` — exe 下次啟動會自動選用最佳模型。
+
+<details>
+<summary><strong>自行建置 exe</strong></summary>
+
+需要 Node ≥ 22，且先執行過 `npm run setup`（exe 會內嵌 `bin/` + `models/`）：
+
+```bash
+npm run package:win        # → build/LiveNotes.exe（約 165 MB）
+```
+
+建置指令碼（`scripts/package-win.mjs`、`scripts/make-windowless.mjs`）用 esbuild 打包伺服器、把資產嵌進 Node single-executable-application 的 blob、注入 node.exe（postject），再把 PE 子系統從 console 翻成 GUI，讓雙擊時不會出現主控台視窗。
+
+</details>
+
+---
+
+## 選項 B — 從原始碼執行
+
+全新安裝大約需要 **10 分鐘** 加上下載時間。請依序操作 — 每個步驟結尾都有可驗證該步驟是否成功的指令。
+
+### 事前需求
 
 | 需求 | 說明與下載 | 驗證 |
 |---|---|---|
@@ -37,8 +95,6 @@
 
 `gemma3:12b` 也能在 CPU 上跑，但一場長會議的摘要可能要等一分鐘以上。
 你隨時可以從應用程式筆記頁尾的下拉選單切換模型。
-
-## 逐步安裝
 
 ### 步驟 1 — 安裝 Node.js
 
@@ -83,7 +139,7 @@ ollama list         # 應該列出 qwen2.5:3b
 有 Git（[git-scm.com/download/win](https://git-scm.com/download/win)）：
 
 ```bash
-git clone https://github.com/AnthonyChen05/transcribe-livenotes.git
+git clone https://github.com/SynesisLab/transcribe-livenotes.git
 cd transcribe-livenotes
 ```
 
@@ -184,7 +240,7 @@ npm start
 
 ## 設定
 
-設定是分開的：**Ollama 模型選擇**存在 `data/config.json`（全域 — 整個應用共用一個模型），而**自動筆記開關**與**使用中的預設檔**是逐筆記的，存在 `data/sessions.json`。這些也都能從 UI 修改。環境變數覆寫：
+設定是分開的：**Ollama 模型選擇**存在 `data/config.json`（全域 — 整個應用共用一個模型），而**自動筆記開關**與**使用中的預設檔**是逐筆記的，存在 `data/sessions.json`。這些也都能從 UI 修改。環境變數覆寫（exe 與 `npm start` 皆適用，另有標註者除外）：
 
 | 變數 | 預設值 | 用途 |
 |---|---|---|
@@ -194,10 +250,12 @@ npm start
 | `WHISPER_PORT` | `1782` | （基準值；實際連接埠會自動挑選） |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama 端點 |
 | `OLLAMA_NUM_THREADS` | 核心數 / 2 − 2 | 限制 Ollama 的 CPU 執行緒數，讓即時轉錄在 AI 工作執行時仍保有自己的核心 |
+| `LIVELN_NO_BROWSER` | — | 封裝版 exe：啟動時不自動開啟瀏覽器 |
+| `LIVELN_NO_TRAY` | — | 封裝版 exe：不顯示系統匣圖示 |
 
 ### 提升轉錄品質
 
-預設模型 `ggml-base.en-q5_1.bin`（57 MB）是可用尺寸中最小的 — 快，但會聽錯口音與專業術語（Ollama 預設檔的口音備註能幫 AI 猜對，但輸入品質更好才是根本）。要升級，下載較大的模型並重新啟動 `npm run dev`：
+預設模型 `ggml-base.en-q5_1.bin`（57 MB）是可用尺寸中最小的 — 快，但會聽錯口音與專業術語（Ollama 預設檔的口音備註能幫 AI 猜對，但輸入品質更好才是根本）。要升級，下載較大的模型並重新啟動：
 
 ```powershell
 npm run setup -- ggml-large-v3-turbo-q5_0.bin
@@ -210,7 +268,7 @@ npm run setup -- ggml-large-v3-turbo-q5_0.bin
 | `ggml-small.en.bin` | 465 MB | 小幅升級，僅限英語 |
 | `ggml-medium.en.bin` | 1.4 GB | 更大躍升，每個語句明顯變慢 |
 
-伺服器會自動挑選 `models/` 中現有的最佳模型（依品質排序），無需其他設定。[whisper.cpp HuggingFace 儲存庫](https://huggingface.co/ggerganov/whisper.cpp/tree/main) 中的任何 `.bin` 都可以傳給 `npm run setup --`。
+伺服器會自動挑選 `models/` 中現有的最佳模型（依品質排序），無需其他設定。[whisper.cpp HuggingFace 儲存庫](https://huggingface.co/ggerganov/whisper.cpp/tree/main) 中的任何 `.bin` 都可以傳給 `npm run setup --` — 封裝版 exe 則是把檔案放進 exe 資料夾的 `models/`。
 
 ## 疑難排解
 
@@ -227,11 +285,13 @@ npm run setup -- ggml-large-v3-turbo-q5_0.bin
 | `whisper-server did not become ready` | 查看伺服器主控台的 `[whisper]` 訊息；防毒軟體可能封鎖該 exe |
 | 轉錄語言不正確 | 改用多語言模型（`WHISPER_MODEL=ggml-base-q5_1.bin`）— `.en` 模型僅支援英語 |
 | 連接埠 3001 被占用 | 環境檢查會在啟動時標記。`PORT=4000 npm start`（開發代理固定用 3001 — 一併修改 `vite.config.js`） |
+| exe：系統匣圖示沒出現 | 輔助程式是 exe 旁的 `server/tray.ps1` — 用 `data/log.txt` 裡的相同參數手動執行即可看到錯誤；期間可用 `taskkill /IM LiveNotes.exe /F` 結束 |
+| exe：無法啟動／毫無反應 | 查看 exe 旁的 `data/log.txt`；SmartScreen 或防毒軟體可能已將它隔離 — 解除封鎖後重新啟動 |
 
 ## 檔案位置
 
 ```
-teleprompt-livenotes/
+transcribe-livenotes/
 ├── bin/                  # whisper-server.exe + DLL（下載取得）
 ├── models/               # Whisper ggml 模型（下載取得）
 ├── data/
@@ -245,8 +305,11 @@ teleprompt-livenotes/
 │   ├── profiles.json     # 你的 AI 預設檔（主題、口音、風格指南）
 │   └── config.json       # 全域設定（Ollama 模型）
 ├── server/               # Express + ws 後端，啟動 whisper-server
+│   └── tray.ps1          # 封裝版 exe：系統匣圖示輔助程式（PowerShell）
 ├── src/                  # React 前端（錄音、VAD、窗格）
 ├── scripts/
 │   ├── setup.mjs         # 資產下載器
-│   └── check.mjs         # 環境檢查醫生（`npm run check`）
+│   ├── check.mjs         # 環境檢查醫生（`npm run check`）
+│   └── package-win.mjs   # 建置 LiveNotes.exe（搭配 make-windowless.mjs）
+└── build/                # 封裝輸出（gitignore）
 ```

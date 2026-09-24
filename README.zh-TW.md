@@ -10,9 +10,20 @@
 - ✍️ **Markdown 編輯器** — 即時編輯並同步渲染預覽，自動儲存到磁碟。窗格可拖曳分隔線調整大小，編輯器也能隱藏，切換成逐字稿 + AI 筆記的檢視模式；兩項選擇都會被記住。
 - 🧰 **AI 工具列** — 摘要逐字稿、擷取行動項目、潤飾或重讀選取的文字。結果會逐 token 串流寫入筆記中游標所在的位置。
 - 👤 **情境預設檔（Profiles）** — 針對活動命名的預設（主題、講者口音、風格指南），會引導所有 AI 提示詞。
+- 🪟 **單一檔案 Windows 應用** — 整個應用可建置成一個雙擊即可執行的 `LiveNotes.exe`（不需要 Node、npm 或終端機）：伺服器隱藏執行、自動開啟瀏覽器，並提供系統匣圖示讓你重新開啟或結束。可從 [Releases](https://github.com/SynesisLab/transcribe-livenotes/releases) 下載。
 - 🔒 **零雲端** — 沒有 API 金鑰、沒有遙測，除了 localhost 之外沒有任何網路請求。
 
 ## 快速開始
+
+### 選項 A — 封裝版 exe（Windows，最簡單）
+
+1. 安裝 [Ollama](https://ollama.com/download) 並為 AI 功能拉取一個模型：`ollama pull qwen2.5:3b`。（沒有它轉錄也能運作 — 只有 AI 功能需要 Ollama。）
+2. 從最新的 [release](https://github.com/SynesisLab/transcribe-livenotes/releases) 下載 **`LiveNotes.exe`** 並雙擊執行 — 不需要 Node、npm，也沒有主控台視窗。瀏覽器會開啟 `http://127.0.0.1:3001`。
+3. 系統匣會出現一個圖示（預設收在時鐘旁的隱藏圖示區 `^`）：左鍵點擊重新開啟應用，右鍵 → **Quit** 可乾淨地結束。
+
+首次啟動會把內嵌的 whisper 執行檔 + 模型（約 75 MB）解壓到 exe 旁邊的資料夾，需要幾秒鐘。你的筆記存放在 exe 旁的 `data/` — 把 `LiveNotes.exe` + `data/` 一起複製即可搬移或備份。細節、日誌與疑難排解請見 **[SETUP.zh-TW.md](SETUP.zh-TW.md)**。
+
+### 選項 B — 從原始碼執行
 
 ```bash
 # 事前需求：Node.js >= 20（nodejs.org）與 Ollama（ollama.com/download）
@@ -48,6 +59,7 @@ npm run dev                 # → http://localhost:5173
 | `src/` | React UI：錄音 hook（VAD + 重取樣）、逐字稿窗格、筆記編輯器、情境預設檔管理 |
 | `scripts/setup.mjs` | 一次性下載 whisper.cpp 發布版執行檔 + ggml 模型 |
 | `scripts/check.mjs` | `npm run check`（以及每次 `dev`/`start`）背後的環境檢查醫生 |
+| `scripts/package-win.mjs` | 建置封裝版 `LiveNotes.exe`（Node SEA + postject；`server/tray.ps1` 是它的系統匣圖示輔助程式） |
 | `bin/`、`models/` | whisper-server.exe 與模型（gitignore，另行下載） |
 | `data/` | 你的筆記：`sessions.json` 索引，加上每則筆記一個 `sessions/<name>/` 目錄（`notes.md`、`autonotes.md`、`transcript.md`、`latest.txt`），以及情境預設檔與全域設定（gitignore） |
 
