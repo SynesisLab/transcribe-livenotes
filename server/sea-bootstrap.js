@@ -3,14 +3,14 @@
 // from LiveNotes.exe it:
 //
 //   1. tees console output into data/log.txt (a GUI-subsystem exe has no
-//      console — this is the only place errors are visible)
+//      console — the /logs page shows it live; runs in dev too)
 //   2. reaps whisper-server.exe processes orphaned by a previous Task-Manager
 //      kill of the exe (they hold the model in RAM and lock their files,
 //      which would also block asset re-extraction)
 //   3. extracts the embedded dist/, bin/ and models/ assets to disk next to
 //      the exe — whisper-server.exe and its DLLs must be real files
 //   4. provides the launch flow helpers: single-instance probe, browser
-//      open, tray icon (right-click → Open / Quit)
+//      open, tray icon (right-click → Open / Show Logs / Quit)
 //
 // This module is imported FIRST by index.js so its module body (extraction)
 // finishes before store.js initializes the data directory.
@@ -32,11 +32,13 @@ try {
 }
 
 const STAMP_FILE = path.join(ROOT_DIR, '.liveln-assets');
-const LOG_FILE = path.join(ROOT_DIR, 'data', 'log.txt');
+export const LOG_FILE = path.join(ROOT_DIR, 'data', 'log.txt');
 const MAX_LOG_BYTES = 512 * 1024;
 
 // ---------------------------------------------------------------------------
-// 1. Logging — GUI-subsystem stdout goes nowhere; keep a tail-capped file.
+// 1. Logging — a GUI-subsystem exe has no stdout, so everything goes to a
+// tail-capped file (shown live by the /logs page). Runs in the dev checkout
+// too, so /logs works there as well; data/ is gitignored.
 function setupLogging() {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
@@ -164,8 +166,8 @@ function extractAssets() {
 }
 
 // ---------------------------------------------------------------------------
+setupLogging(); // always — /logs needs the file in the dev checkout too
 if (IS_SEA && sea) {
-  setupLogging();
   cleanupWhisperOrphans();
   extractAssets();
 }
@@ -201,9 +203,10 @@ export function seaOpenBrowser(port) {
 // 5. Tray icon (packaged build only). node can't own a notification-area
 // icon, so the exe runs a tiny PowerShell helper (server/tray.ps1, embedded
 // as an asset) that shows one: right-click → Open / Show Logs / Quit,
-// left-click → open. Quit POSTs /api/quit for a clean stop; the helper also
-// dies on its own when this process does (crash, Task-Manager kill), so the
-// icon never outlives the app.
+// left-click → open. Show Logs opens the /logs page in the browser; Quit
+// POSTs /api/quit for a clean stop; the helper also dies on its own when
+// this process does (crash, Task-Manager kill), so the icon never outlives
+// the app.
 export function startTray(port) {
   if (!IS_SEA || process.env.LIVELN_NO_TRAY) return;
   const script = path.join(ROOT_DIR, 'server', 'tray.ps1');
@@ -230,8 +233,6 @@ export function startTray(port) {
         String(process.pid),
         '-ProcessName',
         path.basename(process.execPath),
-        '-LogFile',
-        LOG_FILE,
       ],
       { stdio: 'ignore', windowsHide: true }
     ).unref();

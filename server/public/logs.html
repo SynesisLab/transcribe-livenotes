@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Notes — Logs</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d97757'/%3E%3Ctext x='16' y='22' font-family='Arial' font-size='17' font-weight='bold' fill='%23fff' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f0eee6; --surface: #faf9f5; --surface-2: #f5f3ec;
+    --ink: #1f1e1d; --ink-soft: #55524c; --muted: #85827a;
+    --hairline: #e0ddd3; --hairline-soft: #eae7dd;
+    --accent: #d97757; --accent-press: #c15f3c; --accent-soft: #f7e7df;
+    --ok: #6b8f5e; --bad: #b3462e; --warn: #b8860b;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 var(--sans);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--hairline); flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); flex: none; }
+  .brand .sub { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+          letter-spacing: .08em; color: var(--ok); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s ease-in-out infinite; }
+  .live.down { color: var(--warn); }
+  .live.down i { background: var(--warn); animation: none; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  #toolbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--hairline); flex: none;
+  }
+  #search {
+    flex: 1 1 200px; max-width: 380px; min-width: 140px;
+    font: 13px var(--sans); color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 7px 12px; outline: none;
+  }
+  #search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #search::placeholder { color: var(--muted); }
+  .chips { display: flex; gap: 4px; }
+  .chip {
+    font: 12px var(--sans); color: var(--ink-soft);
+    background: transparent; border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 4px 12px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-press); font-weight: 600; }
+  .btn {
+    font: 12.5px var(--sans); color: var(--ink-soft);
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--muted); color: var(--ink); }
+  .btn:active { background: var(--accent-soft); }
+
+  #scroller { flex: 1; overflow-y: auto; padding: 10px 0 18px; }
+  #list { font: 12.5px/1.6 var(--mono); }
+  .ln { display: flex; gap: 10px; padding: 1px 16px; align-items: flex-start; }
+  .ln:hover { background: var(--surface); }
+  .ln .t { flex: none; color: var(--muted); font-size: 11.5px; padding-top: 1px; font-variant-numeric: tabular-nums; }
+  .ln .tag {
+    flex: none; font-size: 10.5px; line-height: 1.7;
+    background: var(--accent-soft); color: var(--accent-press);
+    border-radius: 4px; padding: 0 7px; font-family: var(--sans); font-weight: 600;
+  }
+  .ln .msg { flex: 1; white-space: pre-wrap; word-break: break-word; min-width: 0; }
+  .ln.err { background: rgba(179, 70, 46, .07); }
+  .ln.err .msg { color: var(--bad); }
+  .ln.warn .msg { color: var(--warn); }
+  .ln.blank { height: .55em; }
+
+  #jump {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 46px;
+    background: var(--accent); color: #fff; border: none;
+    font: 12.5px var(--sans); font-weight: 600;
+    border-radius: 999px; padding: 8px 16px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(31, 30, 29, .25);
+  }
+  #jump:hover { background: var(--accent-press); }
+
+  #noMatch, #emptyState {
+    margin: 48px auto; max-width: 460px; text-align: center;
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 28px 24px;
+  }
+  #noMatch h2, #emptyState h2 { margin: 0 0 8px; font-size: 15px; }
+  #noMatch p, #emptyState p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+  #emptyState code {
+    font: 12px var(--mono); background: var(--surface-2);
+    border: 1px solid var(--hairline-soft); border-radius: 4px; padding: 1px 5px;
+    word-break: break-all;
+  }
+
+  footer {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 6px 16px; background: var(--surface);
+    border-top: 1px solid var(--hairline); flex: none;
+    font-size: 11.5px; color: var(--muted);
+  }
+  #path { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status { flex: none; font-variant-numeric: tabular-nums; }
+
+  #toast {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-6px);
+    background: var(--ink); color: var(--surface); border-radius: 8px;
+    font: 12.5px var(--sans); padding: 8px 16px; opacity: 0;
+    transition: opacity .18s, transform .18s; pointer-events: none; z-index: 10;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span> Live Notes <span class="sub">/ logs</span></div>
+  <div class="spacer"></div>
+  <span id="live" class="live"><i></i><span id="liveText">LIVE</span></span>
+  <span id="meta" class="meta"></span>
+</header>
+<div id="toolbar">
+  <input id="search" type="search" placeholder="Filter lines…  ( / to focus )">
+  <div class="chips" id="levels">
+    <button class="chip on" data-lvl="all">All</button>
+    <button class="chip" data-lvl="warn">Warnings</button>
+    <button class="chip" data-lvl="err">Errors</button>
+  </div>
+  <div class="spacer"></div>
+  <button id="clearView" class="btn">Clear view</button>
+  <button id="copy" class="btn">Copy</button>
+</div>
+<main id="scroller">
+  <div id="emptyState" hidden></div>
+  <div id="noMatch" hidden><h2>No lines match</h2><p>Adjust the filter or level chips above.</p></div>
+  <div id="list"></div>
+</main>
+<button id="jump" hidden></button>
+<footer><span id="path"></span><span id="status"></span></footer>
+<div id="toast"></div>
+<script>
+'use strict';
+var list = document.getElementById('list');
+var scroller = document.getElementById('scroller');
+var searchEl = document.getElementById('search');
+var emptyStateEl = document.getElementById('emptyState');
+var noMatchEl = document.getElementById('noMatch');
+var jumpEl = document.getElementById('jump');
+var liveEl = document.getElementById('live');
+var liveTextEl = document.getElementById('liveText');
+var metaEl = document.getElementById('meta');
+var pathEl = document.getElementById('path');
+var statusEl = document.getElementById('status');
+var toastEl = document.getElementById('toast');
+
+var entries = [];      // parsed log lines currently in the view
+var rendered = 0;      // entries.length at last DOM sync
+var offset = 0;        // byte offset of the log we've already received
+var haveFile = true;
+var filterText = '';
+var level = 'all';
+var pinned = true;     // follow the tail while the user is at the bottom
+var pending = 0;       // new lines waiting while scrolled up
+var backoff = 600;
+var timer = null;
+var MAX_ROWS = 6000;
+
+// --- parsing ------------------------------------------------------------
+function parseLevel(msg) {
+  if (/\b(error|failed|uncaught|exception|fatal|cannot)\b/i.test(msg)) return 'err';
+  if (/\bwarn(ing)?\b/i.test(msg)) return 'warn';
+  return 'info';
+}
+function parseLine(raw) {
+  var s = raw, t = '', tag = '', m;
+  m = s.match(/^\[(\d{1,2}:\d{2}:\d{2})\]\s?/);
+  if (m) { t = m[1]; s = s.slice(m[0].length); }
+  m = s.match(/^\[([A-Za-z][\w .-]*)\]\s?/);
+  if (m) { tag = m[1]; s = s.slice(m[0].length); }
+  return { t: t, tag: tag, lvl: s === '' ? 'info' : parseLevel(s), msg: s, raw: raw };
+}
+function addText(text) {
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i] === '' && i === lines.length - 1) continue;
+    entries.push(parseLine(lines[i]));
+  }
+  var over = entries.length - MAX_ROWS;
+  if (over > 0) entries.splice(0, over);
+}
+
+// --- rendering ----------------------------------------------------------
+function visible(e) {
+  if (level === 'err' && e.lvl !== 'err') return false;
+  if (level === 'warn' && e.lvl === 'info') return false;
+  if (filterText && e.raw.toLowerCase().indexOf(filterText) === -1) return false;
+  return true;
+}
+function makeRow(e) {
+  var row = document.createElement('div');
+  if (e.msg === '') { row.className = 'ln blank'; return row; }
+  row.className = 'ln ' + e.lvl;
+  if (e.t) { var t = document.createElement('span'); t.className = 't'; t.textContent = e.t; row.appendChild(t); }
+  if (e.tag) { var g = document.createElement('span'); g.className = 'tag'; g.textContent = e.tag; row.appendChild(g); }
+  var m = document.createElement('span'); m.className = 'msg'; m.textContent = e.msg; row.appendChild(m);
+  return row;
+}
+function scrollBottom() { scroller.scrollTop = scroller.scrollHeight; }
+function rerender() {
+  var frag = document.createDocumentFragment();
+  var shown = 0;
+  for (var i = 0; i < entries.length; i++) {
+    if (!visible(entries[i])) continue;
+    frag.appendChild(makeRow(entries[i]));
+    shown++;
+  }
+  list.textContent = '';
+  list.appendChild(frag);
+  rendered = entries.length;
+  noMatchEl.hidden = !(haveFile && entries.length > 0 && shown === 0);
+  if (pinned) scrollBottom();
+}
+function appendNew() {
+  var frag = document.createDocumentFragment();
+  var added = 0;
+  for (var i = rendered; i < entries.length; i++) {
+    if (!visible(entries[i])) continue;
+    frag.appendChild(makeRow(entries[i]));
+    added++;
+  }
+  if (added) {
+    list.appendChild(frag);
+    if (pinned) scrollBottom();
+    else {
+      pending += added;
+      jumpEl.textContent = '↓ ' + pending + ' new line' + (pending === 1 ? '' : 's');
+      jumpEl.hidden = false;
+    }
+  }
+  rendered = entries.length;
+  noMatchEl.hidden = true;
+}
+
+// --- polling ------------------------------------------------------------
+function setLive(ok) {
+  liveEl.className = 'live' + (ok ? '' : ' down');
+  liveTextEl.textContent = ok ? 'LIVE' : 'RECONNECTING…';
+}
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+function showMissing(path) {
+  haveFile = false;
+  list.textContent = '';
+  rendered = entries.length = 0;
+  noMatchEl.hidden = true;
+  emptyStateEl.textContent = '';
+  var h = document.createElement('h2'); h.textContent = 'No log yet';
+  var p = document.createElement('p');
+  p.textContent = 'Nothing has been written to ';
+  var c = document.createElement('code'); c.textContent = path;
+  p.appendChild(c);
+  p.appendChild(document.createTextNode(' so far — lines appear here as soon as the app logs something.'));
+  emptyStateEl.appendChild(h); emptyStateEl.appendChild(p);
+  emptyStateEl.hidden = false;
+}
+function onData(d) {
+  backoff = 600;
+  setLive(true);
+  if (d.missing) { showMissing(d.path || 'data/log.txt'); schedule(); return; }
+  emptyStateEl.hidden = true;
+  haveFile = true;
+  if (d.reset) { entries.length = 0; rendered = 0; list.textContent = ''; }
+  offset = d.offset;
+  if (d.added) {
+    addText(d.added);
+    if (rendered === 0 || entries.length <= rendered || filterText || level !== 'all') rerender();
+    else appendNew();
+  }
+  metaEl.textContent = fmtSize(d.size) + ' · updated ' + new Date().toTimeString().slice(0, 8);
+  pathEl.textContent = d.path || '';
+  statusEl.textContent = 'refreshing every ' + Math.round(backoff / 100) / 10 + ' s';
+  schedule();
+}
+function onFail() {
+  backoff = Math.min(backoff * 2, 5000);
+  setLive(false);
+  statusEl.textContent = 'server unreachable — retrying in ' + Math.round(backoff / 100) / 10 + ' s';
+  schedule();
+}
+function schedule() {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(loop, backoff);
+}
+function loop() {
+  if (document.hidden) { scheduleWith(2000); return; }
+  fetch('/api/logs/tail?offset=' + offset, { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(onData)
+    .catch(onFail);
+}
+function scheduleWith(ms) {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(loop, ms);
+}
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) { scheduleWith(100); }
+});
+
+// --- controls -----------------------------------------------------------
+scroller.addEventListener('scroll', function () {
+  var nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 32;
+  if (nearBottom) { pinned = true; pending = 0; jumpEl.hidden = true; }
+  else pinned = false;
+});
+jumpEl.addEventListener('click', function () {
+  pinned = true; pending = 0; jumpEl.hidden = true; scrollBottom();
+});
+var searchTimer = null;
+searchEl.addEventListener('input', function () {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(function () {
+    filterText = searchEl.value.toLowerCase();
+    rerender();
+  }, 120);
+});
+document.getElementById('levels').addEventListener('click', function (ev) {
+  var b = ev.target.closest('.chip');
+  if (!b) return;
+  level = b.getAttribute('data-lvl');
+  var chips = this.querySelectorAll('.chip');
+  for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('on', chips[i] === b);
+  rerender();
+});
+document.addEventListener('keydown', function (ev) {
+  if (ev.key === '/' && document.activeElement !== searchEl) { ev.preventDefault(); searchEl.focus(); }
+  else if (ev.key === 'Escape' && document.activeElement === searchEl) {
+    searchEl.value = ''; filterText = ''; rerender(); searchEl.blur();
+  }
+});
+document.getElementById('clearView').addEventListener('click', function () {
+  entries.length = 0; rendered = 0; list.textContent = '';
+  noMatchEl.hidden = true; emptyStateEl.hidden = true; haveFile = true;
+  toast('View cleared — new lines will still appear');
+});
+document.getElementById('copy').addEventListener('click', function () {
+  var out = [];
+  for (var i = 0; i < entries.length; i++) if (visible(entries[i])) out.push(entries[i].raw);
+  var text = out.join('\n');
+  if (!text) { toast('Nothing to copy'); return; }
+  var done = function () { toast('Copied ' + out.length + ' line' + (out.length === 1 ? '' : 's')); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+  } else { fallbackCopy(text); done(); }
+});
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+var toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 1600);
+}
+
+loop();
+</script>
+</body>
+</html>

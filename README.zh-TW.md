@@ -19,7 +19,7 @@
 
 1. 安裝 [Ollama](https://ollama.com/download) 並為 AI 功能拉取一個模型：`ollama pull qwen2.5:3b`。（沒有它轉錄也能運作 — 只有 AI 功能需要 Ollama。）
 2. 從最新的 [release](https://github.com/SynesisLab/transcribe-livenotes/releases) 下載 **`LiveNotes.exe`** 並雙擊執行 — 不需要 Node、npm，也沒有主控台視窗。瀏覽器會開啟 `http://127.0.0.1:3001`。
-3. 系統匣會出現一個圖示（預設收在時鐘旁的隱藏圖示區 `^`）：左鍵點擊重新開啟應用；右鍵 → **Show Logs** 會開啟即時更新的日誌視窗；右鍵 → **Quit** 可乾淨地結束。
+3. 系統匣會出現一個圖示（預設收在時鐘旁的隱藏圖示區 `^`）：左鍵點擊重新開啟應用；右鍵 → **Show Logs** 會在瀏覽器開啟日誌檢視器；右鍵 → **Quit** 可乾淨地結束。
 
 首次啟動會把內嵌的 whisper 執行檔 + 模型（約 75 MB）解壓到 exe 旁邊的資料夾，需要幾秒鐘。你的筆記存放在 exe 旁的 `data/` — 把 `LiveNotes.exe` + `data/` 一起複製即可搬移或備份。細節、日誌與疑難排解請見 **[SETUP.zh-TW.md](SETUP.zh-TW.md)**。
 

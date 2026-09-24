@@ -36,15 +36,15 @@ Node.js, npm and Python are **not** needed — everything else is inside the exe
 2. Double-click it. First launch extracts the embedded whisper binary, model and UI (~75 MB) next to the exe — a few seconds, skipped on later launches. Then:
    - the server starts hidden (no console window) on `127.0.0.1:3001`,
    - your default browser opens at the app,
-   - a **tray icon** appears — Windows files it under the hidden-icons chevron (`^` next to the clock; drag it to the visible area if you like). Left-click or the menu's **Open Live Notes** reopens the app; right-click → **Show Logs** opens a window that tails `data/log.txt` live; right-click → **Quit** stops it cleanly, taking the whisper child with it.
+   - a **tray icon** appears — Windows files it under the hidden-icons chevron (`^` next to the clock; drag it to the visible area if you like). Left-click or the menu's **Open Live Notes** reopens the app; right-click → **Show Logs** opens the log viewer in your browser (a live, formatted view of `data/log.txt` — also reachable anytime at `http://127.0.0.1:3001/logs`); right-click → **Quit** stops it cleanly, taking the whisper child with it.
 3. Type a note name, click **+ Create note**, hit **● Record** — continue with **[First run](#first-run)** for the tour.
 
 Things worth knowing:
 
 - **Your notes live in `data/` next to the exe** (`data/sessions/<name>/…` — see [Where things live](#where-things-live)). Copy `LiveNotes.exe` + `data/` together to move or back them up.
-- **Stop the app** with the tray icon (right-click → **Quit**). Closing the browser does not stop it. `taskkill /IM LiveNotes.exe /F` still works; any `whisper-server.exe` child exits on its own when the exe dies, and a startup sweep also reaps strays. When something misbehaves, right-click → **Show Logs** tails `data/log.txt` in a live window. If the tray icon itself never appears, its helper is `server/tray.ps1` next to the exe — run it by hand to see the error.
+- **Stop the app** with the tray icon (right-click → **Quit**). Closing the browser does not stop it. `taskkill /IM LiveNotes.exe /F` still works; any `whisper-server.exe` child exits on its own when the exe dies, and a startup sweep also reaps strays. When something misbehaves, right-click → **Show Logs** opens the log viewer in your browser. If the tray icon itself never appears, its helper is `server/tray.ps1` next to the exe — run it by hand to see the error.
 - **Double-clicking again while the app is running** just re-opens the browser (single-instance).
-- **Logs** (the exe has no console) go to `data/log.txt` next to the exe; tray → **Show Logs** tails it live.
+- **Logs** (the exe has no console) go to `data/log.txt` next to the exe; tray → **Show Logs** (or `http://127.0.0.1:3001/logs`) shows them formatted and live. From source, the same page works too.
 - **SmartScreen** may warn about the unsigned exe on first run — *More info → Run anyway*.
 - Launched from a script, you can set `LIVELN_NO_BROWSER=1` (no auto-open), `LIVELN_NO_TRAY=1` (no tray icon) or `PORT=4000` (different port).
 - The exe embeds the default `base.en` Whisper model. To transcribe with a better model, run the source setup once (`npm run setup -- ggml-large-v3-turbo-q5_0.bin` — see [Better transcription quality](#better-transcription-quality)) and copy the model file from that checkout's `models/` into the exe folder's `models/`; the exe picks the best model present on next launch.
@@ -306,6 +306,7 @@ transcribe-livenotes/
 │   ├── profiles.json     # your AI profiles (topic, accents, style guide)
 │   └── config.json       # global settings (Ollama model)
 ├── server/               # Express + ws backend, spawns whisper-server
+│   ├── public/logs.html  # the /logs viewer page (tray "Show Logs" opens it)
 │   └── tray.ps1          # packaged exe: tray-icon helper (PowerShell)
 ├── src/                  # React frontend (recorder, VAD, panes)
 ├── scripts/

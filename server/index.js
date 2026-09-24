@@ -18,7 +18,7 @@ import { WebSocketServer } from 'ws';
 // first app import: its module body extracts the packaged build's embedded
 // assets before anything below resolves paths against them
 import { IS_SEA } from './paths.js';
-import { seaAlreadyRunning, seaOpenBrowser, startTray } from './sea-bootstrap.js';
+import { seaAlreadyRunning, seaOpenBrowser, startTray, LOG_FILE } from './sea-bootstrap.js';
 import {
   findWhisperServerExe,
   defaultModelPath,
@@ -450,6 +450,53 @@ app.post('/api/transcript/clear', (req, res) => {
   rt.autoNotes.reset();
   broadcastTo(rt, { t: 'transcript-cleared' });
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Log viewer: /logs serves a formatted, live-updating page (the tray's
+// "Show Logs" opens it); /api/logs/tail feeds it by byte offset, handing back
+// only complete lines so a mid-write tail never splits a line or a UTF-8 char.
+app.get('/logs', (_req, res) => {
+  res.sendFile(path.join(ROOT_DIR, 'server', 'public', 'logs.html'));
+});
+app.get('/api/logs/tail', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  let offset = Number(req.query.offset) || 0;
+  let st;
+  try {
+    st = fs.statSync(LOG_FILE);
+  } catch {
+    res.json({ missing: true, path: LOG_FILE });
+    return;
+  }
+  if (offset > st.size) offset = 0; // log rotated/truncated — start over
+  const CAP = 256 * 1024;
+  if (offset === 0 && st.size > CAP) offset = st.size - CAP; // first load: the last 256 KB
+  let text = '';
+  try {
+    const buf = Buffer.alloc(st.size - offset);
+    const fd = fs.openSync(LOG_FILE, 'r');
+    try {
+      const n = fs.readSync(fd, buf, 0, buf.length, offset);
+      text = buf.toString('utf8', 0, Math.max(n, 0));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    res.json({ missing: true, path: LOG_FILE }); // vanished between stat and read
+    return;
+  }
+  const nl = text.lastIndexOf('\n');
+  let added = text;
+  let next = st.size;
+  if (nl === -1) {
+    added = ''; // nothing complete yet — held back until the line finishes
+    next = offset;
+  } else if (nl < text.length - 1) {
+    added = text.slice(0, nl + 1);
+    next = offset + nl + 1;
+  }
+  res.json({ offset: next, size: st.size, added, reset: offset === 0 && st.size > 0, path: LOG_FILE });
 });
 
 if (fs.existsSync(DIST_DIR)) {

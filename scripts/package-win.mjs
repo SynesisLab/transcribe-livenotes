@@ -103,6 +103,9 @@ function main() {
   if (!fs.existsSync(path.join(ROOT, 'server', 'tray.ps1')))
     die('server/tray.ps1 missing — the packaged build would have no tray icon');
   add(path.join(ROOT, 'server', 'tray.ps1'), 'server/tray.ps1');
+  if (!fs.existsSync(path.join(ROOT, 'server', 'public', 'logs.html')))
+    die('server/public/logs.html missing — the packaged build would have no log viewer');
+  add(path.join(ROOT, 'server', 'public', 'logs.html'), 'server/public/logs.html');
 
   const manifest = { files };
   const manifestPath = path.join(SEA, '_manifest.json');

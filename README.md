@@ -19,7 +19,7 @@
 
 1. Install [Ollama](https://ollama.com/download) and pull a model for the AI features: `ollama pull qwen2.5:3b`. (Transcription works without it — only the AI features need Ollama.)
 2. Download **`LiveNotes.exe`** from the latest [release](https://github.com/SynesisLab/transcribe-livenotes/releases) and double-click it — no Node, no npm, no console window. Your browser opens at `http://127.0.0.1:3001`.
-3. A tray icon appears under the hidden-icons chevron (`^` by the clock): left-click reopens the app, right-click → **Show Logs** tails the log in a live-updating window, and right-click → **Quit** stops it cleanly.
+3. A tray icon appears under the hidden-icons chevron (`^` by the clock): left-click reopens the app, right-click → **Show Logs** opens the log viewer in your browser, and right-click → **Quit** stops it cleanly.
 
 First launch extracts the embedded whisper binary + model (~75 MB) into a folder next to the exe and takes a few seconds. Your notes live in `data/` next to the exe — copy `LiveNotes.exe` + `data/` together to move or back them up. Details, logs and troubleshooting: **[SETUP.md](SETUP.md)**.
 
