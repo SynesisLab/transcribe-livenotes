@@ -52,6 +52,10 @@ import { createAutoNotes } from './autonotes.js';
 import { listProfiles, upsertProfile, deleteProfile, getProfile, buildProfileContext } from './profiles.js';
 
 const APP_PORT = Number(process.env.PORT || 3001);
+
+// The shared whisper child — set by initWhisper, used by /api/quit so the
+// tray's Quit can stop it even before/without the 'exit' handler below.
+let whisperChild = null;
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
 initStore(); // idempotent v1.0.0 migration + note index + global config
@@ -149,6 +153,7 @@ async function initWhisper() {
     return;
   }
   const child = await startWhisperServer({ exe, modelPath, onLog: (line) => console.log(`[whisper] ${line}`) });
+  whisperChild = child;
   child.on('exit', (code) => {
     whisperState = { state: 'exited', message: `whisper-server exited with code ${code}` };
     broadcastAll({ t: 'whisper', ...whisperState });
@@ -291,8 +296,15 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, whisper: whisperState, ollama: ollamaOk });
 });
 
-// Packaged build only: the tray icon's Quit menu asks for a clean stop (the
-// whisper child is reaped by the 'exit' handler initWhisper installed).
+// Packaged build only: the tray icon's Quit menu asks for a clean stop.
+// Do NOT tear the whisper child down inline: when quit arrives after whisper
+// is ready, killing the child and/or running full exit teardown has been
+// observed to wedge this process — process.exit() blocks in Windows teardown,
+// so no in-process watchdog timer can rescue it either (timers never run).
+// Instead: try the graceful path, and have a detached cmd force-terminate
+// both processes 2s later from outside (cmd.exe is already used for opening
+// the browser; 'ping' is the console-less sleep). If the graceful path
+// completes first, both taskkills hit dead PIDs and are no-ops.
 app.post('/api/quit', (_req, res) => {
   if (!IS_SEA) {
     res.status(404).json({ error: 'quit is only supported in the packaged build' });
@@ -300,7 +312,14 @@ app.post('/api/quit', (_req, res) => {
   }
   res.json({ ok: true });
   console.log('quit requested from the tray icon — shutting down');
-  setTimeout(() => process.exit(0), 150); // let the response flush first
+  const whisperPid = whisperChild?.pid;
+  const killLine =
+    `ping -n 3 127.0.0.1 >nul & taskkill /F /PID ${process.pid} >nul 2>&1` +
+    (whisperPid ? ` & taskkill /F /PID ${whisperPid} >nul 2>&1` : '');
+  try {
+    spawn('cmd.exe', ['/c', killLine], { stdio: 'ignore', windowsHide: true, detached: true }).unref();
+  } catch {}
+  setTimeout(() => process.exit(0), 150); // usually exits on its own
 });
 
 // -- notes (recording sessions) index + CRUD -------------------------------

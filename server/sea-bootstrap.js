@@ -200,10 +200,10 @@ export function seaOpenBrowser(port) {
 // ---------------------------------------------------------------------------
 // 5. Tray icon (packaged build only). node can't own a notification-area
 // icon, so the exe runs a tiny PowerShell helper (server/tray.ps1, embedded
-// as an asset) that shows one: right-click → Open / Quit, left-click → open.
-// Quit POSTs /api/quit for a clean stop; the helper also dies on its own
-// when this process does (crash, Task-Manager kill), so the icon never
-// outlives the app.
+// as an asset) that shows one: right-click → Open / Show Logs / Quit,
+// left-click → open. Quit POSTs /api/quit for a clean stop; the helper also
+// dies on its own when this process does (crash, Task-Manager kill), so the
+// icon never outlives the app.
 export function startTray(port) {
   if (!IS_SEA || process.env.LIVELN_NO_TRAY) return;
   const script = path.join(ROOT_DIR, 'server', 'tray.ps1');
@@ -230,6 +230,8 @@ export function startTray(port) {
         String(process.pid),
         '-ProcessName',
         path.basename(process.execPath),
+        '-LogFile',
+        LOG_FILE,
       ],
       { stdio: 'ignore', windowsHide: true }
     ).unref();

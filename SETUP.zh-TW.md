@@ -36,15 +36,15 @@ Node、npm、Python 都**不需要**。
 2. 雙擊執行。首次啟動會把內嵌的 whisper 執行檔、模型與 UI（約 75 MB）解壓到 exe 旁邊 — 需要幾秒鐘，之後的啟動會跳過。接著：
    - 伺服器在 `127.0.0.1:3001` 隱藏執行（沒有主控台視窗），
    - 預設瀏覽器自動開啟應用，
-   - **系統匣**出現一個圖示 — Windows 預設把它收在時鐘旁的隱藏圖示區（`^`；可以拖到可見區域）。左鍵點擊或選單的 **Open Live Notes** 重新開啟應用；右鍵 → **Quit** 可乾淨地結束，whisper 子程序會一併收掉。
+   - **系統匣**出現一個圖示 — Windows 預設把它收在時鐘旁的隱藏圖示區（`^`；可以拖到可見區域）。左鍵點擊或選單的 **Open Live Notes** 重新開啟應用；右鍵 → **Show Logs** 會開啟即時顯示 `data/log.txt` 的視窗；右鍵 → **Quit** 可乾淨地結束，whisper 子程序會一併收掉。
 3. 輸入筆記名稱，點 **+ Create note**，按 **● Record** — 接著看下方的**[初次使用](#初次使用)**導覽。
 
 值得知道的事：
 
 - **你的筆記存放在 exe 旁的 `data/`**（`data/sessions/<name>/…` — 見[檔案位置](#檔案位置)）。把 `LiveNotes.exe` + `data/` 一起複製即可搬移或備份。
-- **結束應用**用系統匣圖示（右鍵 → **Quit**）。關閉瀏覽器不會結束它。`taskkill /IM LiveNotes.exe /F` 也仍然有效；exe 結束時 `whisper-server.exe` 子程序會自行退出，啟動時也有清掃機制會處理殘留的程序。如果系統匣圖示遲遲沒出現，它的輔助程式是 exe 旁的 `server/tray.ps1` — 手動執行它就能看到錯誤訊息。
+- **結束應用**用系統匣圖示（右鍵 → **Quit**）。關閉瀏覽器不會結束它。`taskkill /IM LiveNotes.exe /F` 也仍然有效；exe 結束時 `whisper-server.exe` 子程序會自行退出，啟動時也有清掃機制會處理殘留的程序。應用行為異常時，右鍵 → **Show Logs** 會即時顯示 `data/log.txt`。如果系統匣圖示遲遲沒出現，它的輔助程式是 exe 旁的 `server/tray.ps1` — 手動執行它就能看到錯誤訊息。
 - **應用已在執行時再次雙擊**只會重新開啟瀏覽器（單一實例）。
-- **日誌**（exe 沒有主控台）寫在 exe 旁的 `data/log.txt`。
+- **日誌**（exe 沒有主控台）寫在 exe 旁的 `data/log.txt`；系統匣 → **Show Logs** 會即時顯示。
 - **SmartScreen** 可能在首次執行時對未簽署的 exe 提出警告 — 點 *更多資訊 → 仍要執行*。
 - 從指令碼啟動時，可以設定 `LIVELN_NO_BROWSER=1`（不自動開瀏覽器）、`LIVELN_NO_TRAY=1`（不顯示系統匣圖示）或 `PORT=4000`（改用其他連接埠）。
 - exe 內嵌的是 `base.en` Whisper 模型；想用更好的模型，先在原始碼 checkout 執行 `npm run setup -- ggml-large-v3-turbo-q5_0.bin`（見[提升轉錄品質](#提升轉錄品質)），再把該模型檔複製到 exe 資料夾的 `models/` — exe 下次啟動會自動選用最佳模型。
