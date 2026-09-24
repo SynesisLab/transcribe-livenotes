@@ -17,11 +17,10 @@
 // idempotent per file, so an interrupted move resumes cleanly.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { sanitizeOllamaOptions } from './ollama.js';
+import { ROOT_DIR } from './paths.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = path.join(ROOT_DIR, 'data');
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -306,4 +305,5 @@ export function initStore() {
   }
 }
 
-export const ROOT_DIR = ROOT;
+// re-exported for the server entry (index.js resolves dist/ from it)
+export { ROOT_DIR };

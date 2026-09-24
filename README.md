@@ -10,9 +10,20 @@
 - ✍️ **Markdown editor** — live editing with rendered preview, autosaved to disk. Panes are resizable (drag the divider) and the editor can be hidden for a transcript + AI-notes view; both choices are remembered.
 - 🧰 **AI toolbar** — summarize the transcript, extract action items, polish or re-read selected text. Results stream token-by-token into your notes at the cursor.
 - 👤 **Profiles** — named event presets (topic, speaker accents, style guide) that steer every AI prompt.
+- 🪟 **One-file Windows app** — the whole thing builds into a double-clickable `LiveNotes.exe` (Node, npm and a terminal not required): server runs hidden, the browser opens, and a tray icon lets you reopen or quit. Available in [Releases](https://github.com/SynesisLab/transcribe-livenotes/releases).
 - 🔒 **Zero cloud** — no API keys, no telemetry, no network calls beyond localhost.
 
 ## Quick start
+
+### Option A — the packaged exe (Windows, easiest)
+
+1. Install [Ollama](https://ollama.com/download) and pull a model for the AI features: `ollama pull qwen2.5:3b`. (Transcription works without it — only the AI features need Ollama.)
+2. Download **`LiveNotes.exe`** from the latest [release](https://github.com/SynesisLab/transcribe-livenotes/releases) and double-click it — no Node, no npm, no console window. Your browser opens at `http://127.0.0.1:3001`.
+3. A tray icon appears under the hidden-icons chevron (`^` by the clock): left-click reopens the app, right-click → **Quit** stops it cleanly.
+
+First launch extracts the embedded whisper binary + model (~75 MB) into a folder next to the exe and takes a few seconds. Your notes live in `data/` next to the exe — copy `LiveNotes.exe` + `data/` together to move or back them up. Details, logs and troubleshooting: **[SETUP.md](SETUP.md)**.
+
+### Option B — from source
 
 ```bash
 # prerequisites: Node.js >= 20 (nodejs.org) and Ollama (ollama.com/download)
@@ -48,6 +59,7 @@ Windows x64 is the supported path (whisper binaries are prebuilt). Full prerequi
 | `src/` | React UI: recorder hook (VAD + resampling), transcript pane, notes editor, profiles |
 | `scripts/setup.mjs` | One-time download of whisper.cpp release binaries + the ggml model |
 | `scripts/check.mjs` | The setup doctor behind `npm run check` (and every `dev`/`start`) |
+| `scripts/package-win.mjs` | Builds the packaged `LiveNotes.exe` (Node SEA + postject; `server/tray.ps1` is its tray-icon helper) |
 | `bin/`, `models/` | whisper-server.exe and the models (gitignored, downloaded) |
 | `data/` | Your notes: `sessions.json` index plus a `sessions/<name>/` directory per note (`notes.md`, `autonotes.md`, `transcript.md`, `latest.txt`), plus profiles and global config (gitignored) |
 

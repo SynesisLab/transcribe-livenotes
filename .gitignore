@@ -3,4 +3,5 @@ dist/
 bin/
 models/
 data/
+build/
 *.log

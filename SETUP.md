@@ -6,11 +6,69 @@ A fully local, offline web app: live speech-to-text on the left, an AI-assisted 
 Every note is its own page at `/<name>` — the dashboard at `/` organizes them all.
 Transcription runs through **whisper.cpp**, text processing through **Ollama**. Nothing leaves your machine.
 
-A fresh install takes about **10 minutes** plus download time. Work through the steps in order — each one ends with a command that verifies it worked.
+There are two ways to run it:
+
+- **[Option A — the packaged exe](#option-a--the-packaged-exe-livenotesexe)** (Windows, ~10 min total including the Ollama download): download one file, double-click. No Node, no npm, no terminal.
+- **[Option B — from source](#option-b--from-source)**: clone and run with Node — what you want for development.
+
+Both use the same engine and the same on-disk note format, and both are fully offline once installed.
 
 ---
 
-## Requirements
+## Option A — the packaged exe (LiveNotes.exe)
+
+The whole app in one double-clickable file — server, UI, whisper.cpp binary and Whisper model all embedded.
+
+### What you need
+
+| Requirement | Details | Verify |
+|---|---|---|
+| **Windows 10/11 x64** | The exe is Windows-only. | — |
+| **Ollama** *(for AI features)* | Install from **[ollama.com/download](https://ollama.com/download)** — the installer also starts the background service. Transcription and manual note-taking work without it; summaries, action items, polish and live notes need it. | `ollama --version` |
+| **One Ollama model** | `ollama pull qwen2.5:3b` (~1.9 GB) — or see [Which Ollama model?](#which-ollama-model) | `ollama list` |
+| **A microphone** | The browser asks for permission the first time you record. | — |
+
+Node.js, npm and Python are **not** needed — everything else is inside the exe.
+
+### Run it
+
+1. Download **`LiveNotes.exe`** from the latest [release](https://github.com/SynesisLab/transcribe-livenotes/releases) into its own folder (e.g. `Documents\LiveNotes\`).
+2. Double-click it. First launch extracts the embedded whisper binary, model and UI (~75 MB) next to the exe — a few seconds, skipped on later launches. Then:
+   - the server starts hidden (no console window) on `127.0.0.1:3001`,
+   - your default browser opens at the app,
+   - a **tray icon** appears — Windows files it under the hidden-icons chevron (`^` next to the clock; drag it to the visible area if you like). Left-click or the menu's **Open Live Notes** reopens the app; right-click → **Quit** stops it cleanly, taking the whisper child with it.
+3. Type a note name, click **+ Create note**, hit **● Record** — continue with **[First run](#first-run)** for the tour.
+
+Things worth knowing:
+
+- **Your notes live in `data/` next to the exe** (`data/sessions/<name>/…` — see [Where things live](#where-things-live)). Copy `LiveNotes.exe` + `data/` together to move or back them up.
+- **Stop the app** with the tray icon (right-click → **Quit**). Closing the browser does not stop it. `taskkill /IM LiveNotes.exe /F` still works; any `whisper-server.exe` child exits on its own when the exe dies, and a startup sweep also reaps strays. If the tray icon ever fails to appear, its helper is `server/tray.ps1` next to the exe — run it by hand to see the error.
+- **Double-clicking again while the app is running** just re-opens the browser (single-instance).
+- **Logs** (the exe has no console) go to `data/log.txt` next to the exe.
+- **SmartScreen** may warn about the unsigned exe on first run — *More info → Run anyway*.
+- Launched from a script, you can set `LIVELN_NO_BROWSER=1` (no auto-open), `LIVELN_NO_TRAY=1` (no tray icon) or `PORT=4000` (different port).
+- The exe embeds the default `base.en` Whisper model. To transcribe with a better model, run the source setup once (`npm run setup -- ggml-large-v3-turbo-q5_0.bin` — see [Better transcription quality](#better-transcription-quality)) and copy the model file from that checkout's `models/` into the exe folder's `models/`; the exe picks the best model present on next launch.
+
+<details>
+<summary><strong>Build the exe yourself</strong></summary>
+
+Requires Node ≥ 22 and `npm run setup` done first (the exe embeds `bin/` + `models/`):
+
+```bash
+npm run package:win        # → build/LiveNotes.exe (~165 MB)
+```
+
+The build scripts (`scripts/package-win.mjs`, `scripts/make-windowless.mjs`) bundle the server with esbuild, embed the assets into a Node single-executable-application blob, inject it into a copy of `node.exe` (postject) and flip the PE subsystem to GUI so double-click opens no console.
+
+</details>
+
+---
+
+## Option B — from source
+
+A fresh install takes about **10 minutes** plus download time. Work through the steps in order — each one ends with a command that verifies it worked.
+
+### Requirements
 
 | Requirement | Details & download | Verify |
 |---|---|---|
@@ -37,8 +95,6 @@ Everything runs on **CPU unless you have an NVIDIA GPU**. Model size directly de
 
 `gemma3:12b` works on CPU too, but expect a summary of a long meeting to take a minute or more.
 You can switch models anytime from the dropdown in the app's notes footer.
-
-## Step-by-step setup
 
 ### Step 1 — Install Node.js
 
@@ -185,7 +241,7 @@ That's the whole setup — continue with **[First run](#first-run)** below for a
 
 ## Configuration
 
-Settings are split: the **Ollama model choice** lives in `data/config.json` (global — one model for the whole app), while the **auto-notes toggle** and **active profile** are per note and live in `data/sessions.json`. Everything is also editable from the UI. Environment overrides:
+Settings are split: the **Ollama model choice** lives in `data/config.json` (global — one model for the whole app), while the **auto-notes toggle** and **active profile** are per note and live in `data/sessions.json`. Everything is also editable from the UI. Environment overrides (apply to both the exe and `npm start` unless noted):
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -195,10 +251,12 @@ Settings are split: the **Ollama model choice** lives in `data/config.json` (glo
 | `WHISPER_PORT` | `1782` | (base value; actual port is auto-picked) |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama endpoint |
 | `OLLAMA_NUM_THREADS` | cores/2 − 2 | Cap Ollama's CPU threads so live transcription keeps its cores during AI jobs |
+| `LIVELN_NO_BROWSER` | — | Packaged exe: don't auto-open the browser on launch |
+| `LIVELN_NO_TRAY` | — | Packaged exe: don't show the tray icon |
 
 ### Better transcription quality
 
-The default model, `ggml-base.en-q5_1.bin` (57 MB), is the smallest practical one — fast, but it mishears accents and domain terms (your Ollama profile's accent notes help the AI catch those, but better input is better). To upgrade, download a larger model and restart `npm run dev`:
+The default model, `ggml-base.en-q5_1.bin` (57 MB), is the smallest practical one — fast, but it mishears accents and domain terms (your Ollama profile's accent notes help the AI catch those, but better input is better). To upgrade, download a larger model and restart:
 
 ```powershell
 npm run setup -- ggml-large-v3-turbo-q5_0.bin
@@ -211,7 +269,7 @@ npm run setup -- ggml-large-v3-turbo-q5_0.bin
 | `ggml-small.en.bin` | 465 MB | Mild upgrade, English-only |
 | `ggml-medium.en.bin` | 1.4 GB | Bigger jump, noticeably slower per utterance |
 
-The server automatically picks the best model present in `models/` (quality-ranked), so no other configuration is needed. Any `.bin` from the [whisper.cpp HuggingFace repo](https://huggingface.co/ggerganov/whisper.cpp/tree/main) can be passed to `npm run setup --`.
+The server automatically picks the best model present in `models/` (quality-ranked), so no other configuration is needed. Any `.bin` from the [whisper.cpp HuggingFace repo](https://huggingface.co/ggerganov/whisper.cpp/tree/main) can be passed to `npm run setup --` — in the packaged exe, drop the file into the exe folder's `models/` instead.
 
 ## Troubleshooting
 
@@ -228,11 +286,13 @@ The server automatically picks the best model present in `models/` (quality-rank
 | `whisper-server did not become ready` | Check the server console for `[whisper]` lines; antivirus may block the exe |
 | Transcription is wrong language | Use a multilingual model (`WHISPER_MODEL=ggml-base-q5_1.bin`) — `.en` models are English-only |
 | Port 3001 busy | The setup check flags this at startup. `PORT=4000 npm start` (dev proxy hardcodes 3001 — edit `vite.config.js` too) |
+| Exe: tray icon missing | The helper is `server/tray.ps1` next to the exe — run it by hand (same arguments as in `data/log.txt`) to see the error; stop via `taskkill /IM LiveNotes.exe /F` meanwhile |
+| Exe: won't start / nothing happens | Check `data/log.txt` next to the exe; SmartScreen or antivirus may have quarantined it — unblock and re-launch |
 
 ## Where things live
 
 ```
-teleprompt-livenotes/
+transcribe-livenotes/
 ├── bin/                  # whisper-server.exe + DLLs (downloaded)
 ├── models/               # Whisper ggml models (downloaded)
 ├── data/
@@ -246,8 +306,11 @@ teleprompt-livenotes/
 │   ├── profiles.json     # your AI profiles (topic, accents, style guide)
 │   └── config.json       # global settings (Ollama model)
 ├── server/               # Express + ws backend, spawns whisper-server
+│   └── tray.ps1          # packaged exe: tray-icon helper (PowerShell)
 ├── src/                  # React frontend (recorder, VAD, panes)
 ├── scripts/
 │   ├── setup.mjs         # the asset downloader
-│   └── check.mjs         # the setup doctor (`npm run check`)
+│   ├── check.mjs         # the setup doctor (`npm run check`)
+│   └── package-win.mjs   # builds LiveNotes.exe (with make-windowless.mjs)
+└── build/                # packaged output (gitignored)
 ```

@@ -15,6 +15,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
+// first app import: its module body extracts the packaged build's embedded
+// assets before anything below resolves paths against them
+import { IS_SEA } from './paths.js';
+import { seaAlreadyRunning, seaOpenBrowser, startTray } from './sea-bootstrap.js';
 import {
   findWhisperServerExe,
   defaultModelPath,
@@ -287,6 +291,18 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, whisper: whisperState, ollama: ollamaOk });
 });
 
+// Packaged build only: the tray icon's Quit menu asks for a clean stop (the
+// whisper child is reaped by the 'exit' handler initWhisper installed).
+app.post('/api/quit', (_req, res) => {
+  if (!IS_SEA) {
+    res.status(404).json({ error: 'quit is only supported in the packaged build' });
+    return;
+  }
+  res.json({ ok: true });
+  console.log('quit requested from the tray icon — shutting down');
+  setTimeout(() => process.exit(0), 150); // let the response flush first
+});
+
 // -- notes (recording sessions) index + CRUD -------------------------------
 app.get('/api/sessions', (_req, res) => {
   const sessions = listSessions().map((meta) => ({
@@ -546,8 +562,27 @@ wss.on('connection', (ws, _req, rt) => {
 });
 
 // ---------------------------------------------------------------------------
-server.listen(APP_PORT, '127.0.0.1', () => {
-  console.log(`Live Notes server → http://127.0.0.1:${APP_PORT}`);
-  console.log(`${listSessions().length} note(s) in data/sessions.json`);
+// A listen error here means the port is taken by something that isn't Live
+// Notes (the packaged build catches its own running instance above) — log it
+// and exit instead of dying on an unhandled 'error' event.
+server.on('error', (e) => {
+  console.error(`server error: ${e.code ? e.code + ' ' : ''}${e.message}`);
+  process.exit(1);
 });
-initWhisper();
+
+(async () => {
+  // packaged build: double-clicking again while running just re-opens the UI
+  if (await seaAlreadyRunning(APP_PORT)) {
+    console.log('Live Notes already running — reopening the browser');
+    seaOpenBrowser(APP_PORT);
+    setTimeout(() => process.exit(0), 500); // give the browser handoff a beat
+    return;
+  }
+  server.listen(APP_PORT, '127.0.0.1', () => {
+    console.log(`Live Notes server → http://127.0.0.1:${APP_PORT}`);
+    console.log(`${listSessions().length} note(s) in data/sessions.json`);
+    seaOpenBrowser(APP_PORT); // no-op outside a packaged build
+    startTray(APP_PORT); // no-op outside a packaged build
+  });
+  initWhisper();
+})();

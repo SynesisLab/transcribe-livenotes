@@ -5,10 +5,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { ROOT_DIR } from './paths.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PROFILES_FILE = path.join(ROOT, 'data', 'profiles.json');
+const PROFILES_FILE = path.join(ROOT_DIR, 'data', 'profiles.json');
 
 function load() {
   try {
